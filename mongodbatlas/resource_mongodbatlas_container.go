@@ -1,8 +1,10 @@
 package mongodbatlas
 
 import (
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	ma "github.com/akshaykarle/go-mongodbatlas/mongodbatlas"
 	"github.com/hashicorp/terraform/helper/schema"
@@ -14,6 +16,9 @@ func resourceContainer() *schema.Resource {
 		Read:   resourceContainerRead,
 		Update: resourceContainerUpdate,
 		Delete: resourceContainerDelete,
+		Importer: &schema.ResourceImporter{
+			State: resourceContainerImportState,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"group": &schema.Schema{
@@ -122,6 +127,37 @@ func resourceContainerUpdate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	return resourceContainerRead(d, meta)
+}
+
+func getContainer(client *ma.Client, gid string, cidr string) (*ma.Container, error) {
+	containers, _, err := client.Containers.List(gid)
+	if err != nil {
+		return nil, fmt.Errorf("Couldn't import container %s in group %s, error: %s", cidr, gid, err.Error())
+	}
+	for i := range containers {
+		if containers[i].AtlasCidrBlock == cidr {
+			return &containers[i], nil
+		}
+	}
+	return nil, fmt.Errorf("Couldn't find container with cidr %s in group %s", cidr, gid)
+
+}
+
+func resourceContainerImportState(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	client := meta.(*ma.Client)
+	parts := strings.SplitN(d.Id(), "-", 2)
+	if len(parts) != 2 {
+		return nil, errors.New("To import a Container, use the format {group id}-{container cidr}")
+	}
+	gid := parts[0]
+	cidr := parts[0]
+	container, err := getContainer(client, gid, cidr)
+	if err != nil {
+		return nil, err
+	}
+	d.SetId(container.ID)
+	d.Set("group", gid)
+	return []*schema.ResourceData{d}, nil
 }
 
 func resourceContainerDelete(d *schema.ResourceData, meta interface{}) error {
