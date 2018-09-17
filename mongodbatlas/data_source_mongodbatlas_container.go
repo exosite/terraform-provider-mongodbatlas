@@ -18,11 +18,11 @@ func dataSourceContainer() *schema.Resource {
 			},
 			"identifier": &schema.Schema{
 				Type:     schema.TypeString,
-				Required: true,
+				Optional: true,
 			},
 			"atlas_cidr_block": &schema.Schema{
 				Type:     schema.TypeString,
-				Computed: true,
+				Optional: true,
 			},
 			"provider_name": &schema.Schema{
 				Type:     schema.TypeString,
@@ -44,14 +44,34 @@ func dataSourceContainer() *schema.Resource {
 	}
 }
 
+func getContainerByIDOrCidr(client *ma.Client, gid string, cidr string, id string) (*ma.Container, error) {
+	containers, _, err := client.Containers.List(gid)
+	if err != nil {
+		return nil, fmt.Errorf("Couldn't import container %s in group %s, error: %s", cidr, gid, err.Error())
+	}
+	for i := range containers {
+		if containers[i].AtlasCidrBlock == cidr {
+			return &containers[i], nil
+		}
+	}
+	for i := range containers {
+		if containers[i].ID == id {
+			return &containers[i], nil
+		}
+	}
+	return nil, fmt.Errorf("Couldn't find container with cidr %s or id %s in group %s", cidr, id, gid)
+
+}
+
 func dataSourceContainerRead(d *schema.ResourceData, meta interface{}) error {
 	client := meta.(*ma.Client)
 	id := d.Get("identifier").(string)
 	group := d.Get("group").(string)
+	cidr := d.Get("atlas_cidr_block").(string)
 
-	c, _, err := client.Containers.Get(group, id)
+	c, err := getContainerByIDOrCidr(client, group, cidr, id)
 	if err != nil {
-		return fmt.Errorf("Error reading MongoDB Container with Id %s in Group %s: %s", id, group, err)
+		return err
 	}
 
 	d.SetId(c.ID)
